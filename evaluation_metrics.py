@@ -274,6 +274,8 @@ class ParameterAccuracyMetric(BaseMetric):
                             if args_str.startswith('{') and args_str.endswith('}'):
                                 # Try to parse as dict - replace single quotes with double quotes for JSON
                                 json_str = args_str.replace("'", '"')
+                                # Convert Python booleans to JSON booleans
+                                json_str = json_str.replace("False", "false").replace("True", "true")
                                 args_dict = json.loads(json_str)
                                 if isinstance(args_dict, dict):
                                     parameters = {}
@@ -299,54 +301,87 @@ class ParameterAccuracyMetric(BaseMetric):
                             # Find the start of the JSON (either single or double quote)
                             args_section = content[args_start + 10:]  # Skip 'arguments='
                             
-                            # Handle both quoted formats
+                            # Handle both quoted formats  
                             if args_section.startswith("'") or args_section.startswith('"'):
                                 quote_char = args_section[0]
-                                # Find the end of the quoted JSON, handling potential escaped quotes
-                                json_end = 1
-                                while json_end < len(args_section):
-                                    if args_section[json_end] == quote_char:
-                                        # Check if this quote is escaped
-                                        if json_end == 1 or args_section[json_end-1] != '\\':
-                                            break
-                                    json_end += 1
                                 
-                                if json_end < len(args_section):
-                                    args_str = args_section[1:json_end]  # Extract the JSON content
-                                    if args_str and args_str.startswith('{'):
-                                        # Try to parse as JSON, handling incomplete JSON gracefully
-                                        try:
-                                            args_dict = json.loads(args_str)
-                                            if isinstance(args_dict, dict):
-                                                parameters = {}
-                                                for key, value in args_dict.items():
-                                                    if isinstance(value, str) and value.isdigit():
-                                                        parameters[key] = int(value)
-                                                    elif isinstance(value, str) and value.lower() in ['true', 'false']:
-                                                        parameters[key] = value.lower() == 'true'
-                                                    else:
-                                                        parameters[key] = value
+                                # Special handling for double-quoted JSON with unescaped quotes
+                                if quote_char == '"' and '{"' in args_section:
+                                    # Find the JSON block - look for the opening brace and try to find the matching closing brace
+                                    json_start = args_section.find('{')
+                                    if json_start > 0:
+                                        # Count braces to find the end of JSON
+                                        brace_count = 0
+                                        json_end = json_start
+                                        while json_end < len(args_section):
+                                            if args_section[json_end] == '{':
+                                                brace_count += 1
+                                            elif args_section[json_end] == '}':
+                                                brace_count -= 1
+                                                if brace_count == 0:
+                                                    json_end += 1
+                                                    break
+                                            json_end += 1
+                                        
+                                        if brace_count == 0:  # Found matching closing brace
+                                            args_str = args_section[json_start:json_end]
+                                        else:
+                                            args_str = args_section[json_start:]  # Take what we have
+                                    else:
+                                        args_str = ""
+                                else:
+                                    # Standard quote handling
+                                    json_end = 1
+                                    while json_end < len(args_section):
+                                        if args_section[json_end] == quote_char:
+                                            # Check if this quote is escaped
+                                            if json_end == 1 or args_section[json_end-1] != '\\':
+                                                break
+                                        json_end += 1
+                                    
+                                    if json_end < len(args_section):
+                                        args_str = args_section[1:json_end]  # Extract the JSON content
+                                    else:
+                                        args_str = args_section[1:]  # Take what we have
+                                
+                                if args_str and args_str.startswith('{'):
+                                    # Try to parse as JSON, handling incomplete JSON gracefully
+                                    try:
+                                        args_dict = json.loads(args_str)
+                                        if isinstance(args_dict, dict):
+                                            parameters = {}
+                                            for key, value in args_dict.items():
+                                                if isinstance(value, str) and value.isdigit():
+                                                    parameters[key] = int(value)
+                                                elif isinstance(value, str) and value.lower() in ['true', 'false']:
+                                                    parameters[key] = value.lower() == 'true'
+                                                else:
+                                                    parameters[key] = value
+                                            all_parameters.append((current_session_id, turn_idx, parameters))
+                                    except json.JSONDecodeError:
+                                        # Handle incomplete/malformed JSON - extract with regex
+                                        if '{' in args_str:
+                                            parameters = {}
+                                            # Look for key-value pairs manually with better regex
+                                            import re
+                                            # Match both quoted and unquoted values
+                                            kv_pattern = r'"([^"]+)":\s*((?:"[^"]*")|(?:\'[^\']*\')|(?:\d+(?:\.\d+)?)|(?:true|false|null))'
+                                            matches = re.findall(kv_pattern, args_str)
+                                            for key, value in matches:
+                                                # Clean up the value
+                                                value = value.strip().strip('"\'')
+                                                if value.isdigit():
+                                                    parameters[key] = int(value)
+                                                elif value.replace('.', '').isdigit():
+                                                    parameters[key] = float(value)
+                                                elif value.lower() in ['true', 'false']:
+                                                    parameters[key] = value.lower() == 'true'
+                                                elif value.lower() == 'null':
+                                                    parameters[key] = None
+                                                else:
+                                                    parameters[key] = value
+                                            if parameters:
                                                 all_parameters.append((current_session_id, turn_idx, parameters))
-                                        except json.JSONDecodeError:
-                                            # Handle incomplete JSON - still try to extract what we can
-                                            if '{' in args_str:
-                                                # Try to extract at least some parameters from incomplete JSON
-                                                parameters = {}
-                                                # Look for key-value pairs manually
-                                                import re
-                                                kv_pattern = r'"([^"]+)":\s*([^,}]+)'
-                                                matches = re.findall(kv_pattern, args_str)
-                                                for key, value in matches:
-                                                    # Clean up the value
-                                                    value = value.strip().strip('"\'')
-                                                    if value.isdigit():
-                                                        parameters[key] = int(value)
-                                                    elif value.lower() in ['true', 'false']:
-                                                        parameters[key] = value.lower() == 'true'
-                                                    else:
-                                                        parameters[key] = value
-                                                if parameters:
-                                                    all_parameters.append((current_session_id, turn_idx, parameters))
                     except Exception:
                         # If all parsing fails, continue
                         continue
@@ -362,6 +397,8 @@ class ParameterAccuracyMetric(BaseMetric):
                                 args_str = log[args_start + 5:].strip()
                                 if args_str.startswith('{') and args_str.endswith('}'):
                                     json_str = args_str.replace("'", '"')
+                                    # Convert Python booleans to JSON booleans
+                                    json_str = json_str.replace("False", "false").replace("True", "true")
                                     args_dict = json.loads(json_str)
                                     if isinstance(args_dict, dict):
                                         parameters = {}
@@ -389,18 +426,20 @@ class ParameterAccuracyMetric(BaseMetric):
                                 if args_section.startswith("'") or args_section.startswith('"'):
                                     quote_char = args_section[0]
                                     # Find the end of the quoted JSON, handling potential escaped quotes
-                                    json_end = 1
-                                    while json_end < len(args_section):
-                                        if args_section[json_end] == quote_char:
-                                            # Check if this quote is escaped
-                                            if json_end == 1 or args_section[json_end-1] != '\\':
-                                                break
-                                        json_end += 1
-                                    
-                                    if json_end < len(args_section):
-                                        args_str = args_section[1:json_end]  # Extract the JSON content
-                                        if args_str and (args_str.startswith('{') or args_str.startswith('{')):
-                                            # Try to parse as JSON
+                                # Find the end of the quoted JSON, handling potential escaped quotes
+                                json_end = 1
+                                while json_end < len(args_section):
+                                    if args_section[json_end] == quote_char:
+                                        # Check if this quote is escaped
+                                        if json_end == 1 or args_section[json_end-1] != '\\':
+                                            break
+                                    json_end += 1
+                                
+                                if json_end < len(args_section):
+                                    args_str = args_section[1:json_end]  # Extract the JSON content
+                                    if args_str and args_str.startswith('{'):
+                                        # Try to parse as JSON
+                                        try:
                                             args_dict = json.loads(args_str)
                                             if isinstance(args_dict, dict):
                                                 parameters = {}
@@ -412,6 +451,8 @@ class ParameterAccuracyMetric(BaseMetric):
                                                     else:
                                                         parameters[key] = value
                                                 all_parameters.append((current_session_id, turn_idx, parameters))
+                                        except Exception:
+                                            continue
                         except Exception as e:
                             # If JSON parsing fails, continue
                             continue
@@ -537,12 +578,14 @@ class ResponseAccuracyMetric(BaseMetric):
         agent_wrapper,
         threshold: float = 0.7,
         model: Optional[DeepEvalBaseLLM] = None,
-        include_reason: bool = True
+        include_reason: bool = True,
+        custom_status_mapping: Optional[Dict[str, str]] = None
     ):
         self.agent_wrapper = agent_wrapper
         self.threshold = threshold
         self.model = model
         self.include_reason = include_reason
+        self.custom_status_mapping = custom_status_mapping or {}
     
     def measure(self, test_case: LLMTestCase) -> float:
         """Measure response accuracy."""
@@ -597,16 +640,51 @@ class ResponseAccuracyMetric(BaseMetric):
         amounts = re.findall(r'\$([\d,]+(?:\.\d+)?)', text)
         info['amounts'] = [float(a.replace(',', '')) for a in amounts]
         
-        # Extract warnings
-        if 'warning' in text.lower():
-            info['warnings'] = re.findall(r'warning[^.]*\.', text, re.IGNORECASE)
+        # Extract warnings - first try structured tool data, then text
+        tool_warnings = self._extract_warnings_from_tool_data()
+        if tool_warnings is not None:
+            # Use structured warnings from tool responses
+            info['warnings'] = tool_warnings
+        else:
+            # Fall back to text-based warning detection
+            if 'warning' in text.lower():
+                info['warnings'] = re.findall(r'warning[^.]*\.', text, re.IGNORECASE)
         
         # Extract status (PASSED, FAILED, ELIGIBLE, NOT ELIGIBLE, etc.)
-        status_patterns = [r'\b(PASSED|FAILED|ELIGIBLE|NOT ELIGIBLE)\b', r'\b(passed|failed)\b']
+        # Enhanced patterns to catch semantic variations
+        status_patterns = [
+            # Exact matches (highest priority)
+            r'\b(PASSED|FAILED|ELIGIBLE|NOT ELIGIBLE)\b',
+            r'\b(passed|failed)\b',
+            # Verb forms and variations
+            r'\b(passes|pass)\b',
+            r'\b(fails|fail)\b', 
+            r'\b(approved?|approve)\b',
+            r'\b(rejected?|reject)\b',
+            r'\b(valid|invalid)\b',
+            r'\b(successful|success)\b',
+            r'\b(unsuccessful|unsuccessful)\b'
+        ]
+        
+        # Mapping semantic variations to standard status
+        default_mapping = {
+            'PASSES': 'PASSED', 'PASS': 'PASSED',
+            'FAILS': 'FAILED', 'FAIL': 'FAILED',
+            'APPROVED': 'PASSED', 'APPROVE': 'PASSED',
+            'REJECTED': 'FAILED', 'REJECT': 'FAILED', 
+            'VALID': 'PASSED', 'INVALID': 'FAILED',
+            'SUCCESSFUL': 'PASSED', 'SUCCESS': 'PASSED',
+            'UNSUCCESSFUL': 'FAILED'
+        }
+        
+        # Merge with custom status mapping if provided
+        status_mapping = {**default_mapping, **self.custom_status_mapping}
+        
         for pattern in status_patterns:
             status_match = re.search(pattern, text, re.IGNORECASE)
             if status_match:
-                info['status'] = status_match.group(1).upper()
+                raw_status = status_match.group(1).upper()
+                info['status'] = status_mapping.get(raw_status, raw_status)
                 break
         
         # Extract calculation elements
@@ -621,6 +699,60 @@ class ResponseAccuracyMetric(BaseMetric):
             info['calculations'].extend(matches)
         
         return info
+    
+    def _extract_warnings_from_tool_data(self) -> Optional[List[str]]:
+        """Extract warnings from actual tool response data (structured)."""
+        if not self.agent_wrapper or not hasattr(self.agent_wrapper, 'session_cache'):
+            return None
+        
+        # Get the most recent session (current test case's session)
+        if not self.agent_wrapper.session_cache:
+            return None
+            
+        # Get the most recently created session ID (last in insertion order)
+        current_session_id = list(self.agent_wrapper.session_cache.keys())[-1]
+        session_data = self.agent_wrapper.session_cache[current_session_id]
+        
+        all_warnings = []
+        
+        # Only check the CURRENT session (current test case)
+        turns = session_data.get('turns', [])
+        for turn in turns:
+            # Check execution logs for tool responses
+            execution_logs = turn.get('execution_logs', [])
+            for log in execution_logs:
+                if 'tool_execution>' in log and 'Response:' in log:
+                    # Extract the tool response JSON
+                    response_start = log.find('Response:')
+                    if response_start != -1:
+                        response_section = log[response_start + 9:].strip()
+                        # Look for TextContentItem content
+                        if 'TextContentItem(text=' in response_section:
+                            json_start = response_section.find("'")
+                            if json_start != -1:
+                                json_end = response_section.rfind("'")
+                                if json_end > json_start:
+                                    json_str = response_section[json_start + 1:json_end]
+                                    try:
+                                        # Parse the JSON response
+                                        import json
+                                        tool_response = json.loads(json_str)
+                                        
+                                        # Extract warnings from tool response
+                                        if 'warnings' in tool_response and tool_response['warnings']:
+                                            all_warnings.extend(tool_response['warnings'])
+                                        
+                                        # Extract additional_requirements that indicate warnings
+                                        if 'additional_requirements' in tool_response:
+                                            for req in tool_response['additional_requirements']:
+                                                if any(indicator in req.lower() for indicator in 
+                                                      ['close to threshold', 'verify', 'caution', 'warning', 'alert']):
+                                                    all_warnings.append(req)
+                                                    
+                                    except json.JSONDecodeError:
+                                        continue
+        
+        return all_warnings if all_warnings else []
     
     def _calculate_response_similarity(
         self,
