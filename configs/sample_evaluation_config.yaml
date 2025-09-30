@@ -1,0 +1,40 @@
+# Llama Stack Evaluation Configuration
+
+# Llama Stack connection settings
+stack_url: "http://localhost:8321"
+default_model_id: "llama-3-2-3b"
+default_tool_groups:
+  - "mcp::compatibility"
+  - "mcp::eligibility"
+
+# File paths
+default_csv_file: "scratch/compatibility.csv"
+output_directory: "evaluation_results"
+
+# Metric weights (should sum to 1.0)
+tool_selection_weight: 0.3
+parameter_accuracy_weight: 0.3
+response_accuracy_weight: 0.4
+
+# Success thresholds
+tool_selection_threshold: 1.0
+parameter_accuracy_threshold: 0.8
+response_accuracy_threshold: 0.7
+comprehensive_threshold: 0.7
+
+# Agent configuration
+agent_sampling_params:
+  strategy: "greedy"
+  temperature: 0.0
+  max_tokens: 2048
+
+# Evaluation settings
+verbose_output: false
+save_detailed_results: true
+session_cleanup: true
+parallel_evaluation: false
+max_concurrent_evaluations: 3
+
+# Logging
+log_level: "INFO"
+log_file: null  # Set to filename to log to file
