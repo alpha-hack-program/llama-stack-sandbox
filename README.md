@@ -1,16 +1,17 @@
 # Llama Stack Sandbox - LLM Agent Evaluation Framework
 
-A comprehensive evaluation framework for testing locally Large Language Model (LLM) agents running on a Llama Stack Distribution image. This repository provides tools for connecting to multiple LLMs and MCP (Model Context Protocol) servers, running structured evaluations using CSV test datasets, and generating detailed evaluation visualizations.
+A comprehensive evaluation framework for testing Large Language Model (LLM) agents running on the official Llama Stack Distribution. This repository provides tools for connecting to multiple LLMs and MCP (Model Context Protocol) servers, running structured evaluations using CSV test datasets, and generating detailed performance visualizations.
 
 ## 🎯 Purpose
 
 This sandbox environment enables:
 
-- **Local Llama Stack Distribution**: Run Llama Stack containers locally with multiple LLM providers
+- **Local Llama Stack Distribution**: Run official Llama Stack containers locally with multiple LLM providers
 - **MCP Server Integration**: Connect to Model Context Protocol servers for enhanced tool capabilities  
 - **Structured Testing**: Define and execute test cases using CSV files with expected outcomes
 - **Multi-Metric Evaluation**: Assess agent performance across QA accuracy, tool selection, parameter handling, and response quality
 - **Interactive Visualization**: Generate comprehensive dashboards and charts for evaluation results analysis
+- **Modular Architecture**: Clean separation between container management, evaluation, and visualization components
 
 ## 🏗️ Architecture
 
@@ -26,23 +27,24 @@ This sandbox environment enables:
                        └─────────────────┘
                                │
                                ▼
-                    ┌──────────────────────┐
-                    │  Evaluation Engine   │
-                    │                      │
-                    │ • DeepEval Framework │
-                    │ • Custom Metrics     │
-                    │ • CSV Test Runner    │
-                    │ • Result Analyzer    │
-                    └──────────────────────┘
+                    ┌─────────────────────┐
+                    │  Evaluation Engine  │
+                    │                     │
+                    │ • DeepEval Framework│
+                    │ • Custom Metrics    │
+                    │ • CSV Test Runner   │
+                    │ • Result Analyzer   │
+                    └─────────────────────┘
                                │
                                ▼
-                    ┌──────────────────────┐
-                    │   Visualization      │
-                    │                      │
-                    │ • HTML Dashboards    │
-                    │ • Performance Charts │
-                    │ • Comparison Reports │
-                    └──────────────────────┘
+                    ┌─────────────────────┐
+                    │   Visualization     │
+                    │                     │
+                    │ • Interactive Plots │
+                    │ • HTML Dashboards   │
+                    │ • Performance Charts│
+                    │ • Comparison Reports│
+                    └─────────────────────┘
 ```
 
 ## 📦 Installation & Setup
@@ -50,9 +52,9 @@ This sandbox environment enables:
 ### Prerequisites
 
 - **Python 3.10-3.11** (required for dependencies compatibility)
+- **UV** (recommended) or **pip** for dependency management
 - **Podman** or **Docker** (for running Llama Stack Distribution)
 - **curl** and **jq** (for API testing)
-- **uv** (for python dependencies installation)
 
 ### 1. Clone and Install Dependencies
 
@@ -60,8 +62,11 @@ This sandbox environment enables:
 git clone <repository-url>
 cd llama-stack-sandbox
 
-# uv (recommended for faster installs)
+# Install using uv (recommended)
 uv sync
+
+# OR install using pip
+pip install -r requirements.txt
 ```
 
 ### 2. Environment Configuration
@@ -93,13 +98,11 @@ MCP_SERVER_2_URI=http://localhost:8001/sse
 LSD_BASE_DIR=/opt/app-root/src
 ```
 
-TODO start MCP Servers!!!
-
 ### 3. Start Llama Stack Distribution
 
 ```bash
 # Generate configuration and start the stack
-./lsd.sh
+./run.sh
 ```
 
 This script will:
@@ -141,17 +144,25 @@ The framework includes pre-built test cases for:
 
 ```bash
 # Run evaluation with default settings
-./run_evaluation.sh
+./evaluate.sh
 
 # Run with specific parameters
-./run_evaluation.sh run -c scratch/compatibility-full.csv -m llama-3-1-8b-w4a16 -v
+./evaluate.sh run -c scratch/compatibility-full.csv -m llama-3-1-8b-w4a16 -v
 ```
 
-### Manual Evaluation
+### Using Python Modules Directly
 
 ```bash
-# Using Python directly
-python evaluate.py scratch/compatibility-full.csv \
+# Using uv (recommended)
+uv run -m evaluate scratch/compatibility-full.csv \
+    --model "llama-3-1-8b-w4a16" \
+    --stack-url "http://localhost:8080" \
+    --tools "mcp::compatibility" \
+    --output "results/my_evaluation.json" \
+    --verbose
+
+# Using pip-installed packages
+python -m evaluate scratch/compatibility-full.csv \
     --model "llama-3-1-8b-w4a16" \
     --stack-url "http://localhost:8080" \
     --tools "mcp::compatibility" \
@@ -183,6 +194,13 @@ The framework uses custom DeepEval metrics to assess agent performance:
 
 ```python
 # Custom metrics with thresholds
+from evaluate.metrics import (
+    ToolSelectionMetric,
+    ParameterAccuracyMetric, 
+    ResponseAccuracyMetric,
+    ComprehensiveEvaluationMetric
+)
+
 metrics = [
     ToolSelectionMetric(agent_wrapper, threshold=1.0),
     ParameterAccuracyMetric(agent_wrapper, threshold=0.95),
@@ -204,14 +222,17 @@ Evaluation results include:
 ### Generate Visualizations
 
 ```bash
-# Create comprehensive dashboard
-python visualize_results.py evaluation_results/evaluation_results_TIMESTAMP.json
+# Create comprehensive dashboard (using uv)
+uv run -m visualize evaluation_results/evaluation_results_TIMESTAMP.json
 
-# Generate specific chart types
-python visualize_results.py results.json --chart-types "performance,category,timeline"
+# Create specific chart types
+uv run -m visualize visualize results.json --type summary
 
-# Custom output directory
-python visualize_results.py results.json --output-dir "custom_reports"
+# Upload to DeepEval cloud dashboard
+uv run -m visualize dashboard results.json --login
+
+# Open dashboards automatically
+./visualize.sh
 ```
 
 ### Available Visualizations
@@ -233,57 +254,64 @@ python visualize_results.py results.json --output-dir "custom_reports"
 
 ```
 llama-stack-sandbox/
+├── 📦 Core Framework
 ├── README.md                     # This file
 ├── requirements.txt              # Python dependencies
-├── pyproject.toml               # Project configuration
+├── pyproject.toml               # Modern Python config
 ├── .env                         # Environment variables (create this)
 │
-├── 🚀 Core Scripts
-├── lsd.sh                       # Llama Stack Distribution launcher  
-├── run_evaluation.sh            # Evaluation runner with options
+├── 🐳 Infrastructure (Container & Stack Management)
+├── run.sh                       # Llama Stack Distribution launcher  
 ├── playground.sh                # Interactive testing environment
-├── open_dashboard.sh            # Quick dashboard opener
+├── run/
+│   ├── __init__.py
+│   ├── __main__.py              # Entry point: uv run -m run
+│   ├── config.py                # Configuration parsing
+│   └── yaml_generator.py        # Dynamic run.yaml generation
+├── templates/
+│   └── run.yaml.template        # Jinja2 template
+├── run.yaml                     # Generated config (auto-created)
 │
-├── 🧪 Evaluation Framework  
-├── evaluate.py                  # Main evaluation orchestrator
-├── evaluation_metrics.py        # Custom DeepEval metrics (941 lines)
-├── evaluation_config.py         # Configuration management
-├── evaluation_utils.py          # Helper functions
-├── llama_stack_wrapper.py       # Agent wrapper and session management
+├── 🧪 Evaluation Framework
+├── evaluate.sh                  # Evaluation runner script
+├── evaluate/
+│   ├── __init__.py
+│   ├── __main__.py              # Entry point: uv run -m evaluate
+│   ├── evaluator.py             # Main evaluation orchestrator
+│   ├── metrics.py               # Custom DeepEval metrics (1000+ lines)
+│   ├── wrapper.py               # Agent wrapper and session management
+│   ├── config.py                # Evaluation configuration
+│   ├── loader.py                # CSV test case loading utilities
+│   └── examples.py              # Example usage and demonstrations
 │
-├── 📊 Visualization & Analysis
-├── visualize_results.py         # Chart and dashboard generator
-├── compare_results.py           # Multi-result comparison tools
-├── deepeval_dashboard.py        # DeepEval integration dashboard
+├── 📊 Visualization & Reporting
+├── visualize.sh                 # Quick dashboard opener
+├── visualize/
+│   ├── __init__.py
+│   ├── __main__.py              # Entry point: uv run -m visualize
+│   ├── results.py               # Chart and dashboard generator
+│   └── dashboard.py             # DeepEval cloud dashboard integration
 │
-├── ⚙️ Configuration
-├── run.yaml                     # Generated Llama Stack config
-├── run.yaml.template            # Jinja2 template for dynamic config
-├── generate_run_yaml.py         # Dynamic configuration generator
-├── configs/
-│   └── sample_evaluation_config.yaml
-│
-├── 📋 Test Data
+├── 🗂️ Data & Configuration
 ├── scratch/
 │   ├── compatibility-full.csv   # Complete test suite (21 cases)
-│   └── compatibility.csv        # Quick test subset
+│   ├── compatibility.csv        # Quick test subset
+│   └── compatibility-errors.csv # Error scenarios
+├── configs/
+│   └── sample_evaluation_config.yaml
+├── docs/                        # Knowledge base documents
+│   ├── LyFin-Compliance-Annex.md
+│   └── ...
 │
-├── 📈 Results & Reports
-├── evaluation_results/          # JSON results with timestamps
-│   ├── evaluation_results_YYYYMMDD_HHMMSS.json
-│   ├── logs/                    # Detailed execution logs
-│   ├── reports/                 # Generated analysis reports  
-│   └── visualizations/          # HTML dashboards and charts
-│       ├── comprehensive_dashboard.html
-│       ├── detailed_analysis.html
-│       └── summary_dashboard.html
-│
-└── 📚 Documentation
-    └── docs/
-        ├── LyFin-Compliance-Annex.md
-        ├── LysFin-Compliance.md
-        ├── 2025_61-FR_INT.md
-        └── 2025_61-FR.md
+├── 📈 Results & Outputs (auto-created)
+└── evaluation_results/          # JSON results with timestamps
+    ├── evaluation_results_YYYYMMDD_HHMMSS.json
+    ├── logs/                    # Detailed execution logs
+    ├── reports/                 # Generated analysis reports  
+    └── visualizations/          # HTML dashboards and charts
+        ├── comprehensive_dashboard.html
+        ├── detailed_analysis.html
+        └── summary_dashboard.html
 ```
 
 ## 🔧 Configuration Files
@@ -298,7 +326,7 @@ The `run.yaml` file defines:
 
 Generated dynamically from `.env` using:
 ```bash
-python generate_run_yaml.py
+uv run -m run
 ```
 
 ### Evaluation Configuration
@@ -326,8 +354,8 @@ output_settings:
 
 1. **Setup Environment**:
    ```bash
-   # Install dependencies
-   pip install -r requirements.txt
+   # Install dependencies with uv (recommended)
+   uv sync
    
    # Configure your models and MCP servers in .env
    cp .env.example .env
@@ -336,24 +364,23 @@ output_settings:
 
 2. **Start Llama Stack**:
    ```bash
-   ./lsd.sh
+   ./run.sh
    ```
 
 3. **Run Quick Test**:
    ```bash
-   ./run_evaluation.sh test
+   ./evaluate.sh test
    ```
 
 4. **Execute Full Evaluation**:
    ```bash
-   ./run_evaluation.sh run -c scratch/compatibility-full.csv -v
+   ./evaluate.sh run -c scratch/compatibility-full.csv -v
    ```
 
 5. **View Results**:
    ```bash
    # Generate and open dashboard
-   python visualize_results.py evaluation_results/evaluation_results_*.json
-   ./open_dashboard.sh
+   ./visualize.sh
    ```
 
 ## 🔍 Advanced Usage
@@ -362,11 +389,12 @@ output_settings:
 
 ```bash
 # Run evaluations with different models
-./run_evaluation.sh run -m llama-3-1-8b-w4a16 -o results_llama.json
-./run_evaluation.sh run -m granite-3-3-8b -o results_granite.json
+./evaluate.sh run -m llama-3-1-8b-w4a16 -o results_llama.json
+./evaluate.sh run -m granite-3-3-8b -o results_granite.json
 
-# Compare results
-python compare_results.py results_llama.json results_granite.json
+# Compare results using the visualization module
+uv run -m visualize visualize results_llama.json --type detailed
+uv run -m visualize visualize results_granite.json --type detailed
 ```
 
 ### Custom Test Creation
@@ -379,21 +407,44 @@ python compare_results.py results_llama.json results_granite.json
 
 2. **Run Evaluation**:
    ```bash
-   ./run_evaluation.sh run -c your_tests.csv
+   ./evaluate.sh run -c your_tests.csv
    ```
 
 3. **Analyze Results**:
    ```bash
-   python visualize_results.py evaluation_results/your_results.json
+   uv run -m visualize your_results.json
    ```
+
+### Direct Python Usage
+
+```python
+# Import the evaluation framework
+from evaluate.evaluator import LlamaStackEvaluator
+from evaluate.metrics import ToolSelectionMetric
+from evaluate.loader import CSVTestCaseLoader
+
+# Initialize evaluator
+evaluator = LlamaStackEvaluator(
+    stack_url="http://localhost:8080",
+    model_id="llama-3-1-8b-w4a16",
+    tool_groups=["mcp::compatibility"]
+)
+
+# Run evaluation
+results = await evaluator.run_evaluation(
+    csv_file_path="scratch/compatibility-full.csv",
+    output_file="my_results.json",
+    verbose=True
+)
+```
 
 ### Integration with CI/CD
 
 ```bash
 # Automated evaluation pipeline
-./run_evaluation.sh validate -c tests/regression_tests.csv
-./run_evaluation.sh run -c tests/regression_tests.csv --output results/ci_results.json
-python visualize_results.py results/ci_results.json --format png --output-dir reports/
+./evaluate.sh validate -c tests/regression_tests.csv
+./evaluate.sh run -c tests/regression_tests.csv --output results/ci_results.json
+uv run -m visualize visualize results/ci_results.json --type summary
 ```
 
 ## 🐛 Troubleshooting
@@ -409,7 +460,7 @@ python visualize_results.py results/ci_results.json --format png --output-dir re
    podman logs llama-stack
    
    # Test connectivity
-   ./run_evaluation.sh test
+   ./evaluate.sh test
    ```
 
 2. **Model Authentication Errors**:
@@ -422,24 +473,50 @@ python visualize_results.py results/ci_results.json --format png --output-dir re
    - Check firewall settings for localhost connections
    - Verify MCP server URIs in `.env`
 
-4. **Evaluation Failures**:
+4. **Python Module Import Errors**:
+   ```bash
+   # Ensure proper installation
+   uv sync
+   
+   # Check if modules are accessible
+   uv run python -c "from evaluate import evaluator; print('OK')"
+   ```
+
+5. **Evaluation Failures**:
    ```bash
    # Run with verbose logging
-   ./run_evaluation.sh run -v
+   ./evaluate.sh run -v
    
-   # Check evaluation logs
-   tail -f evaluation_log.txt
+   # Check specific module
+   uv run -m evaluate --help
    
    # Validate test CSV format
-   ./run_evaluation.sh validate -c your_test_file.csv
+   ./evaluate.sh validate -c your_test_file.csv
    ```
+
+## 🆕 What's New in This Version
+
+### Modular Architecture
+- **Separated Concerns**: Infrastructure (`run/`), Evaluation (`evaluate/`), Visualization (`visualize/`)
+- **Python Packages**: Each component is now a proper Python package with `__main__.py` entry points
+- **UV Integration**: Full support for modern Python dependency management with UV
+
+### Improved Commands
+- **Simplified Entry Points**: `uv run -m evaluate`, `uv run -m visualize`, `uv run -m run`
+- **Enhanced Shell Scripts**: Updated `evaluate.sh`, `visualize.sh`, `run.sh` with better error handling
+- **Backward Compatibility**: Old usage patterns still supported during transition
+
+### Better Organization
+- **Clear Directory Structure**: Related files grouped logically
+- **Legacy Preservation**: Old files moved to `old/` directory for reference
+- **Auto-Generated Outputs**: Results and visualizations organized systematically
 
 ## 📚 Additional Resources
 
 - **Llama Stack Documentation**: [Official Llama Stack Docs](https://llama-stack.readthedocs.io/)
 - **DeepEval Framework**: [DeepEval Documentation](https://docs.confident-ai.com/)
 - **Model Context Protocol**: [MCP Specification](https://spec.modelcontextprotocol.io/)
-- **Evaluation Best Practices**: See `docs/` directory for domain-specific guidelines
+- **UV Package Manager**: [UV Documentation](https://github.com/astral-sh/uv)
 
 ## 🤝 Contributing
 

@@ -5,10 +5,10 @@ Wrapper for Llama Stack client to provide agent functionality for evaluation.
 import json
 import logging
 import asyncio
+import re
 from typing import Dict, List, Any, Optional, Union
 from llama_stack_client import LlamaStackClient
 from llama_stack_client.lib.agents.agent import Agent
-from llama_stack_client.lib.agents.event_logger import EventLogger as AgentEventLogger
 
 logger = logging.getLogger(__name__)
 
@@ -50,19 +50,37 @@ IMPORTANT: You MUST use the available tools to perform calculations. Do not do m
 
 Available tools:
 - calc_penalty: Calculate late payment penalties with interest and caps
+  Parameters: {"days_late": number}
+  
 - calc_tax: Progressive tax calculations with surcharge
-- check_voting: Validate voting results and quorum requirements  
+  Parameters: {"income": number}
+  
+- check_voting: Validate voting results and quorum requirements
+  Parameters: {"eligible_voters": number, "turnout": number, "yes_votes": number, "proposal_type": string}
+  
 - distribute_waterfall: Calculate financial waterfall distributions
+  Parameters: {"cash_available": number, "senior_debt": number, "junior_debt": number}
+  
 - check_housing_grant: Check housing assistance eligibility
+  Parameters: {"ami": number, "household_size": number, "income": number, "has_other_subsidy": boolean}
 
-When answering questions:
+CRITICAL TOOL USAGE INSTRUCTIONS:
 1. ALWAYS use the appropriate tool for calculations
-2. Extract the required parameters from the user's question
-3. Call the tool with the correct parameters
-4. Present the tool's results clearly
-5. Include any warnings or special conditions from the tool
+2. Extract ALL required parameters from the user's question
+3. ALWAYS complete the full JSON parameter structure - never truncate or leave incomplete
+4. For check_housing_grant, you MUST include all 4 parameters: ami, household_size, income, has_other_subsidy
+5. Use correct data types: numbers for numeric values, true/false for booleans
+6. Present the tool's results clearly
+7. Include any warnings or special conditions from the tool
 
-Do not perform manual calculations - always use the tools provided."""
+EXAMPLES:
+- For "family of 6 with income 35000, AMI 60000, no other subsidies": 
+  Use check_housing_grant with {"ami": 60000, "household_size": 6, "income": 35000, "has_other_subsidy": false}
+  
+- For "15 days late payment":
+  Use calc_penalty with {"days_late": 15}
+
+Remember: Complete ALL parameters in tool calls. Never send incomplete JSON."""
     
     async def initialize(self) -> bool:
         """
@@ -145,114 +163,67 @@ Do not perform manual calculations - always use the tools provided."""
             
             messages = [{"role": "user", "content": full_content}]
             
-            # Use the Agent class create_turn method (same as test.py)
+            # Use non-streaming API with stream=False
             response = self.agent.create_turn(
+                session_id=session_id,
                 messages=messages,
-                session_id=session_id
+                stream=False
             )
             
-            # Extract the response content using AgentEventLogger (same as test.py)
+            # Extract response content directly from non-streaming response
             agent_response = ""
             tool_executions = []
             step_logs = []
             
-            # Process the response using AgentEventLogger like test.py does
-            response_parts = []
-            inference_tokens = []
-            collecting_inference = False
+            # Access the structured response data
+            input_messages = response.input_messages
+            output_message = response.output_message
+            steps = response.steps
             
-            for log in AgentEventLogger().log(response):
-                # Capture all log content
-                log_str = str(log)
-                step_logs.append(log_str)
+            # Extract the main response content
+            if output_message and hasattr(output_message, 'content'):
+                agent_response = output_message.content
+            
+            # Process steps to extract tool executions and detailed information
+            for step in steps:
+                step_info = {
+                    'step_type': getattr(step, 'step_type', 'unknown'),
+                    'step_id': getattr(step, 'step_id', ''),
+                    'content': str(step)
+                }
+                step_logs.append(step_info)
                 
-                # Look for tool execution logs (both formats)
-                if "tool_execution>" in log_str:
+                # Check if this step contains tool execution information
+                if hasattr(step, 'tool_calls') or 'tool_call' in str(step).lower():
                     tool_executions.append({
-                        'log_type': 'tool_execution',
-                        'content': log_str
+                        'log_type': 'tool_execution_structured',
+                        'step': step_info,
+                        'content': str(step)
                     })
-                elif "call_id=" in log_str and "tool_name=" in log_str:
-                    # Handle incomplete tool calls - add them to tool executions but don't include in final response
-                    tool_executions.append({
-                        'log_type': 'tool_execution_new_format',
-                        'content': log_str
-                    })
-                    # Don't add these to inference tokens as they are tool calls, not final response
-                    continue
-                elif "inference>" in log_str:
-                    # Start collecting inference tokens
-                    collecting_inference = True
-                    inference_content = log_str.split("inference>", 1)[-1].strip()
-                    if inference_content:
-                        # Skip tool call content that got mixed into inference
-                        if not ("call_id=" in inference_content and "tool_name=" in inference_content):
-                            inference_tokens.append(inference_content)
-                elif collecting_inference and log_str.strip():
-                    # Continue collecting inference tokens until we hit an empty line or new section
-                    if log_str.strip() and not ("tool_execution>" in log_str or "step_complete>" in log_str or "call_id=" in log_str):
-                        inference_tokens.append(log_str.strip())
-                    else:
-                        # Stop collecting when we hit a new section
-                        collecting_inference = False
             
-            # Combine all inference tokens into a coherent response
-            if inference_tokens:
-                # Filter out empty tokens and join them properly
-                meaningful_tokens = [token for token in inference_tokens if token.strip()]
-                
-                # Smart joining to handle currency, numbers, and punctuation
-                agent_response = ""
-                for i, token in enumerate(meaningful_tokens):
-                    if i == 0:
-                        agent_response = token
-                    else:
-                        prev_token = meaningful_tokens[i-1]
-                        # Don't add space before punctuation
-                        if token in ['.', ',', ':', ';', '!', '?', '%']:
-                            agent_response += token
-                        # Don't add space after currency symbols
-                        elif prev_token in ['$', '€', '£', '¥']:
-                            agent_response += token
-                        # Don't add space between digits and decimal points
-                        elif prev_token.isdigit() and token in ['.', ','] and i+1 < len(meaningful_tokens) and meaningful_tokens[i+1].isdigit():
-                            agent_response += token
-                        # Don't add space between parts of numbers
-                        elif prev_token.isdigit() and token.isdigit():
-                            agent_response += token
-                        # Don't add space before decimal numbers
-                        elif prev_token == '.' and token.isdigit():
-                            agent_response += token
-                        # Add space for normal word boundaries
-                        else:
-                            agent_response += " " + token
-            elif step_logs:
-                # If no inference tokens, try to extract from logs
-                # Look for the final response content
-                for log in reversed(step_logs):
-                    if log.strip() and "tool_execution>" not in log and "inference>" not in log:
-                        agent_response = log.strip()
-                        break
-            
-            # Log the captured execution details
-            if step_logs:
-                logger.info("Detailed execution logs captured:")
-                for log in step_logs:
-                    logger.info(log)
+            # Log the structured response data for debugging
+            logger.info(f"Input messages: {input_messages}")
+            logger.info(f"Output message content: {agent_response}")
+            logger.info(f"Number of steps: {len(steps)}")
             
             # Ensure we have some response
-            if not agent_response.strip():
-                logger.warning("No response content captured from streaming")
-                agent_response = "Error: No response captured from agent"
+            if not agent_response or not agent_response.strip():
+                logger.warning("No response content captured from non-streaming API")
+                agent_response = "Error: No response content captured from agent"
             
-            # Store turn in cache with detailed execution info
+            # Store turn in cache with structured response data
             if session_id in self.session_cache:
                 self.session_cache[session_id]["turns"].append({
                     "input": user_input,
                     "output": agent_response,
                     "context": context,
                     "tool_executions": tool_executions,
-                    "execution_logs": step_logs
+                    "execution_logs": step_logs,
+                    "structured_response": {
+                        "input_messages": input_messages,
+                        "output_message": output_message,
+                        "steps": steps
+                    }
                 })
             
             return agent_response
@@ -261,27 +232,71 @@ Do not perform manual calculations - always use the tools provided."""
             logger.error(f"Failed to get response: {e}")
             return f"Error: {str(e)}"
     
-    async def extract_tool_usage(self, response: str) -> Dict[str, Any]:
+    async def extract_tool_usage(self, response: str, session_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Extract tool usage information from agent response.
         
         Args:
             response: Agent response string
+            session_id: Optional session ID to get structured response data
             
         Returns:
             Dictionary containing tool usage information
         """
-        # This is a simplified extraction - in practice, you might need
-        # more sophisticated parsing based on your agent's response format
         tool_usage = {
             "tool_called": None,
             "tool_parameters": {},
             "tool_result": None,
-            "raw_response": response
+            "raw_response": response,
+            "structured_data": None
         }
         
         try:
-            # Look for common tool patterns in response
+            # If we have a session ID, try to get structured data first
+            if session_id and session_id in self.session_cache:
+                turns = self.session_cache[session_id]["turns"]
+                if turns:
+                    # Get the most recent turn's structured response
+                    latest_turn = turns[-1]
+                    structured_response = latest_turn.get("structured_response", {})
+                    
+                    if structured_response:
+                        tool_usage["structured_data"] = structured_response
+                        steps = structured_response.get("steps", [])
+                        
+                        # Extract tool information from steps
+                        for step in steps:
+                            if hasattr(step, 'tool_calls'):
+                                for tool_call in step.tool_calls:
+                                    tool_usage["tool_called"] = getattr(tool_call, 'tool_name', None)
+                                    tool_usage["tool_parameters"] = getattr(tool_call, 'arguments', {})
+                                    break
+                            
+                            # Also check step content for tool information
+                            step_str = str(step)
+                            if 'tool_name=' in step_str and 'arguments=' in step_str:
+                                # Try to extract tool name and arguments from step string
+                                import re
+                                tool_name_match = re.search(r'tool_name[=:]\\s*["\']?([^"\'\\s,}]+)["\']?', step_str)
+                                if tool_name_match:
+                                    tool_usage["tool_called"] = tool_name_match.group(1)
+                                
+                                # Try to extract arguments
+                                args_match = re.search(r'arguments[=:]\\s*({[^}]+})', step_str)
+                                if args_match:
+                                    try:
+                                        args_str = args_match.group(1)
+                                        # Convert single quotes to double quotes for JSON parsing
+                                        args_str = args_str.replace("'", '"')
+                                        tool_usage["tool_parameters"] = json.loads(args_str)
+                                    except json.JSONDecodeError:
+                                        pass
+                        
+                        # If we found structured tool data, return it
+                        if tool_usage["tool_called"]:
+                            return tool_usage
+            
+            # Fallback to the original text-based extraction method
             tools = ["calc_penalty", "calc_tax", "check_voting", "distribute_waterfall", "check_housing_grant"]
             
             for tool in tools:
@@ -290,7 +305,6 @@ Do not perform manual calculations - always use the tools provided."""
                     break
             
             # Try to extract JSON-like parameters if present
-            # This is a simplified approach - real implementation might need more robust parsing
             if "{" in response and "}" in response:
                 try:
                     # Find JSON-like structures
@@ -362,6 +376,68 @@ Do not perform manual calculations - always use the tools provided."""
             validation_result["parameter_accuracy"] = correct_params / total_params if total_params > 0 else 0.0
         
         return validation_result
+    
+    def get_structured_response(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get the structured response data from the most recent turn in a session.
+        
+        Args:
+            session_id: Session identifier
+            
+        Returns:
+            Structured response data with input_messages, output_message, and steps
+        """
+        if session_id in self.session_cache:
+            turns = self.session_cache[session_id]["turns"]
+            if turns:
+                latest_turn = turns[-1]
+                return latest_turn.get("structured_response")
+        return None
+    
+    def get_response_steps(self, session_id: str) -> List[Any]:
+        """
+        Get the steps from the most recent response in a session.
+        
+        Args:
+            session_id: Session identifier
+            
+        Returns:
+            List of response steps
+        """
+        structured_response = self.get_structured_response(session_id)
+        if structured_response:
+            return structured_response.get("steps", [])
+        return []
+    
+    def get_input_messages(self, session_id: str) -> List[Dict[str, Any]]:
+        """
+        Get the input messages from the most recent response in a session.
+        
+        Args:
+            session_id: Session identifier
+            
+        Returns:
+            List of input messages
+        """
+        structured_response = self.get_structured_response(session_id)
+        if structured_response:
+            return structured_response.get("input_messages", [])
+        return []
+    
+    def get_output_message(self, session_id: str) -> Optional[Any]:
+        """
+        Get the output message from the most recent response in a session.
+        
+        Args:
+            session_id: Session identifier
+            
+        Returns:
+            Output message object
+        """
+        structured_response = self.get_structured_response(session_id)
+        if structured_response:
+            return structured_response.get("output_message")
+        return None
     
     def get_session_history(self, session_id: str) -> List[Dict[str, Any]]:
         """

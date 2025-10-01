@@ -44,8 +44,8 @@ async def main():
     )
     parser.add_argument(
         "--stack-url", "-u",
-        default="http://localhost:8321",
-        help="Llama Stack server URL (default: http://localhost:8321)"
+        default="http://localhost:8080",
+        help="Llama Stack server URL (default: http://localhost:8080)"
     )
     parser.add_argument(
         "--output", "-o",

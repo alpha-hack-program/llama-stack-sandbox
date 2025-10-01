@@ -33,7 +33,7 @@ class LlamaStackEvaluator:
     
     def __init__(
         self,
-        stack_url: str = "http://localhost:8321",
+        stack_url: str = "http://localhost:8080",
         model_id: str = "llama-3-2-3b",
         tool_groups: Optional[List[str]] = None
     ):

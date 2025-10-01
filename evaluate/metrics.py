@@ -232,8 +232,15 @@ class ParameterAccuracyMetric(BaseMetric):
         if not expected_params:
             return self._create_metric_result(0.0, "Expected parameters not found in context")
         
-        # Extract parameters from execution logs first (more reliable), then fallback to response
-        actual_params = self._extract_parameters_from_execution_logs()
+        # Extract parameters from execution logs first (more reliable), then fallback to response  
+        # Try structured response data first (from non-streaming API)
+        actual_params = self._extract_parameters_from_structured_response()
+        
+        # Fallback to execution logs (for streaming API)
+        if not actual_params:
+            actual_params = self._extract_parameters_from_execution_logs()
+            
+        # Final fallback to response text parsing
         if not actual_params:
             actual_params = self._extract_parameters_from_response(test_case.actual_output or "")
         
@@ -241,6 +248,36 @@ class ParameterAccuracyMetric(BaseMetric):
         score, reason = self._calculate_parameter_accuracy(expected_params, actual_params)
         
         return self._create_metric_result(score, reason)
+    
+    def _extract_parameters_from_structured_response(self) -> Dict[str, Any]:
+        """Extract parameters from structured response data (non-streaming API)."""
+        if not self.agent_wrapper or not hasattr(self.agent_wrapper, 'session_cache'):
+            return {}
+        
+        # Get the most recent session (current test case's session)
+        if not self.agent_wrapper.session_cache:
+            return {}
+            
+        # Get the most recently created session ID (last in insertion order)
+        current_session_id = list(self.agent_wrapper.session_cache.keys())[-1]
+        session_data = self.agent_wrapper.session_cache[current_session_id]
+        
+        # Check the CURRENT session (current test case)
+        turns = session_data.get('turns', [])
+        for turn in turns:
+            # Try to extract from structured response data
+            structured_response = turn.get('structured_response', {})
+            if structured_response:
+                steps = structured_response.get('steps', [])
+                for step in steps:
+                    # Check if this step has tool_calls
+                    if hasattr(step, 'tool_calls') and step.tool_calls:
+                        for tool_call in step.tool_calls:
+                            if hasattr(tool_call, 'arguments') and tool_call.arguments:
+                                # Found tool call with arguments - return the parameters
+                                return tool_call.arguments
+        
+        return {}
     
     def _extract_parameters_from_execution_logs(self) -> Dict[str, Any]:
         """Extract parameters from captured execution logs (current session only)."""
@@ -525,10 +562,37 @@ class ParameterAccuracyMetric(BaseMetric):
         
         for key, expected_value in expected_params.items():
             if key in actual_params:
-                if actual_params[key] == expected_value:
+                actual_value = actual_params[key]
+                
+                # Handle type mismatches (e.g., int vs string)
+                values_match = False
+                
+                # Direct comparison first
+                if actual_value == expected_value:
+                    values_match = True
+                else:
+                    # Try type conversion comparisons
+                    try:
+                        # Try converting both to strings
+                        if str(actual_value) == str(expected_value):
+                            values_match = True
+                        # Try converting both to integers if they're numeric
+                        elif (str(actual_value).replace('.', '').replace('-', '').isdigit() and 
+                              str(expected_value).replace('.', '').replace('-', '').isdigit()):
+                            if int(float(actual_value)) == int(float(expected_value)):
+                                values_match = True
+                        # Try boolean comparisons
+                        elif isinstance(actual_value, bool) or isinstance(expected_value, bool):
+                            if bool(actual_value) == bool(expected_value):
+                                values_match = True
+                    except (ValueError, TypeError):
+                        # If conversion fails, values don't match
+                        values_match = False
+                
+                if values_match:
                     correct_params += 1
                 else:
-                    incorrect_params.append(f"{key}: expected {expected_value}, got {actual_params[key]}")
+                    incorrect_params.append(f"{key}: expected {expected_value}, got {actual_value}")
             else:
                 missing_params.append(key)
         
