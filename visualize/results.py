@@ -1,11 +1,9 @@
-#!/usr/bin/env python3
 """
-Visualization script for Llama Stack evaluation results.
+Results visualization module for Llama Stack evaluation results.
 Creates interactive charts, graphs, and HTML dashboards from JSON results.
 """
 
 import json
-import argparse
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -344,7 +342,7 @@ class EvaluationVisualizer:
         """Create a comprehensive HTML dashboard."""
         
         # Generate individual visualizations
-        summary_file = self.create_summary_charts(save_html=False)
+        summary_file = self.create_summary_charts(save_html=True)
         detailed_file = self.create_detailed_analysis()
         table_file = self.create_data_table()
         
@@ -541,45 +539,3 @@ class EvaluationVisualizer:
         
         print("✅ All visualizations created!")
         return files
-
-
-def main():
-    """Main entry point."""
-    parser = argparse.ArgumentParser(description="Visualize Llama Stack evaluation results")
-    parser.add_argument("results_file", help="Path to JSON results file")
-    parser.add_argument("--type", "-t", choices=['summary', 'detailed', 'table', 'all'], 
-                       default='all', help="Type of visualization to create")
-    parser.add_argument("--open", "-o", action="store_true", help="Open result in browser")
-    
-    args = parser.parse_args()
-    
-    # Check if results file exists
-    if not Path(args.results_file).exists():
-        print(f"❌ Results file not found: {args.results_file}")
-        return
-    
-    # Create visualizer
-    visualizer = EvaluationVisualizer(args.results_file)
-    
-    # Generate visualizations
-    if args.type == 'all':
-        files = visualizer.generate_all_visualizations()
-        main_file = files[-1]  # Comprehensive dashboard
-    elif args.type == 'summary':
-        main_file = visualizer.create_summary_charts()
-    elif args.type == 'detailed':
-        main_file = visualizer.create_detailed_analysis()
-    elif args.type == 'table':
-        main_file = visualizer.create_data_table()
-    
-    print(f"📁 Output directory: {visualizer.output_dir}")
-    print(f"🌐 Main file: {main_file}")
-    
-    if args.open:
-        import webbrowser
-        webbrowser.open(f"file://{Path(main_file).absolute()}")
-        print("🚀 Opening in browser...")
-
-
-if __name__ == "__main__":
-    main()

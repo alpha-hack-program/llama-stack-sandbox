@@ -1,15 +1,11 @@
-#!/usr/bin/env python3
 """
-Evaluation script for Llama Stack agents using DeepEval framework.
-Evaluates agent performance on CSV test cases with custom tools.
+Main evaluator module for Llama Stack agents using DeepEval framework.
 """
 
-import argparse
 import csv
 import json
 import logging
 import os
-import sys
 from typing import Dict, List, Any, Optional
 from pathlib import Path
 
@@ -21,19 +17,14 @@ from deepeval.dataset import EvaluationDataset
 from deepeval.dataset.golden import Golden
 
 # Import custom evaluation metrics
-from evaluation_metrics import (
+from .metrics import (
     ToolSelectionMetric,
     ParameterAccuracyMetric,
     ResponseAccuracyMetric,
     ComprehensiveEvaluationMetric
 )
-from llama_stack_wrapper import LlamaStackAgentWrapper
+from .wrapper import LlamaStackAgentWrapper
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
 logger = logging.getLogger(__name__)
 
 
@@ -138,7 +129,7 @@ class LlamaStackEvaluator:
                 input=test_case['question'],
                 expected_output=test_case['expected_answer'],
                 context=[
-                    f"Expected tool: {test_case['tool_name']}",
+                    f"Expected tool: {test_case['tool_name']}",  
                     f"Expected parameters: {json.dumps(test_case['tool_parameters'])}",
                     f"Evaluation criteria: {test_case['evaluation_criteria']}",
                     f"Category: {test_case['category']}"
@@ -377,81 +368,3 @@ class LlamaStackEvaluator:
                 print(f"  {category}: {successful}/{total} ({successful/total:.2%})")
         
         print("\n" + "="*60)
-
-
-async def main():
-    """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Evaluate Llama Stack agents using DeepEval framework"
-    )
-    parser.add_argument(
-        "csv_file",
-        help="Path to CSV file containing test cases"
-    )
-    parser.add_argument(
-        "--model", "-m",
-        default="llama-3-2-3b",
-        help="Model ID to use for the agent (default: llama-3-2-3b)"
-    )
-    parser.add_argument(
-        "--tools", "-t",
-        nargs="+",
-        default=["mcp::compatibility"],
-        help="Tool groups to enable (default: mcp::compatibility)"
-    )
-    parser.add_argument(
-        "--stack-url", "-u",
-        default="http://localhost:8321",
-        help="Llama Stack server URL (default: http://localhost:8321)"
-    )
-    parser.add_argument(
-        "--output", "-o",
-        help="Output file path for results (JSON format)"
-    )
-    parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Print detailed results to console"
-    )
-    
-    args = parser.parse_args()
-    
-    # Validate CSV file exists
-    if not Path(args.csv_file).exists():
-        logger.error(f"CSV file not found: {args.csv_file}")
-        sys.exit(1)
-    
-    # Initialize evaluator
-    evaluator = LlamaStackEvaluator(
-        stack_url=args.stack_url,
-        model_id=args.model,
-        tool_groups=args.tools
-    )
-    
-    # Run evaluation
-    try:
-        results = await evaluator.run_evaluation(
-            csv_file_path=args.csv_file,
-            output_file=args.output,
-            verbose=args.verbose
-        )
-        
-        if "error" in results:
-            logger.error(f"Evaluation failed: {results['error']}")
-            sys.exit(1)
-        
-        # Print summary if not verbose
-        if not args.verbose:
-            summary = results['summary']
-            print(f"Evaluation completed: {summary['successful_evaluations']}/{summary['total_test_cases']} successful ({summary['success_rate']:.2%})")
-            
-    except KeyboardInterrupt:
-        logger.info("Evaluation interrupted by user")
-        sys.exit(0)
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}")
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

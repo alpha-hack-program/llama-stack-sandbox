@@ -23,7 +23,7 @@ if [ ! -f "$DASHBOARD_DIR/comprehensive_dashboard.html" ] || ([ -n "$LATEST_RESU
     fi
     if [ -n "$LATEST_RESULTS" ]; then
         echo "🔄 Using results file: $LATEST_RESULTS"
-        python visualize_results.py "$LATEST_RESULTS" --type all
+        uv run -m visualize "$LATEST_RESULTS" --type all
     else
         echo "❌ No results files found. Please run an evaluation first."
         exit 1

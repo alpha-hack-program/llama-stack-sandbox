@@ -150,7 +150,7 @@ class EvaluationReport:
         logger.info(f"JSON report saved to {filepath}")
 
 
-class CSVTestCaseLoader:
+class TestCaseLoader:
     """Enhanced CSV loader with validation and preprocessing."""
     
     def __init__(self, csv_file: str):
@@ -235,7 +235,7 @@ class CSVTestCaseLoader:
         return [tc for tc in self.test_cases if tc['tool_name'] == tool_name]
 
 
-class EvaluationBenchmark:
+class EvaluationSessionManager:
     """Class for benchmarking evaluation performance."""
     
     def __init__(self):
@@ -408,9 +408,3 @@ venv/
         with open(gitignore_path, 'w') as f:
             f.write(gitignore_content.strip())
         logger.info(f"Created .gitignore: {gitignore_path}")
-
-
-if __name__ == "__main__":
-    # Example usage
-    setup_evaluation_environment()
-    print("Evaluation environment setup complete!")

@@ -1,13 +1,10 @@
-#!/usr/bin/env python3
 """
-DeepEval Cloud Dashboard Integration Script
-Helps you upload results to Confident AI for web-based visualization.
+DeepEval Cloud Dashboard Integration Module
+Helps upload results to Confident AI for web-based visualization.
 """
 
 import json
-import argparse
 import subprocess
-import sys
 from pathlib import Path
 from deepeval import evaluate
 from deepeval.test_case import LLMTestCase
@@ -82,7 +79,8 @@ class DeepEvalDashboardUploader:
     def upload_to_dashboard(self, dataset_name: str = None) -> bool:
         """Upload dataset to Confident AI dashboard."""
         if not dataset_name:
-            dataset_name = f"llama_stack_evaluation_{int(pd.Timestamp.now().timestamp())}"
+            from datetime import datetime
+            dataset_name = f"llama_stack_evaluation_{int(datetime.now().timestamp())}"
         
         try:
             # Convert data
@@ -175,31 +173,3 @@ else:
             print("❌ DeepEval CLI not found")
             print("💡 Install with: pip install deepeval")
             print(f"💡 Or run the script directly: python {script_file}")
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Upload results to DeepEval dashboard")
-    parser.add_argument("results_file", help="Path to JSON results file")
-    parser.add_argument("--login", action="store_true", help="Login to Confident AI first")
-    parser.add_argument("--name", help="Dataset name for the dashboard")
-    
-    args = parser.parse_args()
-    
-    if not Path(args.results_file).exists():
-        print(f"❌ Results file not found: {args.results_file}")
-        return
-    
-    uploader = DeepEvalDashboardUploader(args.results_file)
-    
-    # Check/handle login
-    if args.login or not uploader.check_login_status():
-        if not uploader.login_to_confident_ai():
-            print("❌ Cannot proceed without login")
-            return
-    
-    # Run dashboard evaluation
-    uploader.run_dashboard_evaluation()
-
-
-if __name__ == "__main__":
-    main()

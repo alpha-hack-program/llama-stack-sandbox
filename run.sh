@@ -17,22 +17,17 @@ source .env
 # You can override this by setting LSD_BASE_DIR in your environment
 export LSD_BASE_DIR=${LSD_BASE_DIR:-/opt/app-root/src}
 
-# Function to generate dynamic run.yaml using Python script
+# Function to generate dynamic run.yaml using uv run and the run package
 generate_run_yaml() {
   echo "Generating dynamic run.yaml using Jinja2 template..."
   
-  # # Activate virtual environment if it exists
-  # if [ -f .venv/bin/activate ]; then
-  #   source .venv/bin/activate
-  # fi
-  
-  if ! python generate_run_yaml.py; then
+  if ! uv run -m run; then
     echo "Error: Failed to generate run.yaml from template"
     echo ""
-    echo "To install Jinja2, run one of these commands:"
-    echo "  pip install jinja2"
-    echo "  pip install -e ."
-    echo "  uv sync  # if using uv"
+    echo "To resolve this issue, try one of these commands:"
+    echo "  uv sync                # recommended: sync dependencies"
+    echo "  uv add jinja2         # add jinja2 if missing"
+    echo "  pip install jinja2    # fallback: install globally"
     exit 1
   fi
 }

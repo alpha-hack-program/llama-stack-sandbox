@@ -57,20 +57,19 @@ check_llama_stack() {
 
 # Function to check dependencies
 check_dependencies() {
-    print_info "Checking Python dependencies..."
+    print_info "Checking Python dependencies with uv..."
     
-    if ! python3 -c "import deepeval, llama_stack_client" > /dev/null 2>&1; then
+    if ! uv run python -c "import deepeval, llama_stack_client" > /dev/null 2>&1; then
         print_warning "Missing required dependencies"
-        print_info "Installing dependencies from requirements.txt..."
+        print_info "Installing dependencies using uv..."
         
-        if [ -f "requirements.txt" ]; then
-            pip install -r requirements.txt
+        if uv sync; then
+            print_success "Dependencies synced successfully"
         else
-            print_info "requirements.txt not found, installing core dependencies..."
-            pip install deepeval llama-stack-client pandas pyyaml
+            print_error "Failed to sync dependencies"
+            print_info "Try running: uv add deepeval llama-stack-client pandas pyyaml"
+            return 1
         fi
-        
-        print_success "Dependencies installed"
     else
         print_success "All dependencies are available"
     fi
@@ -115,8 +114,10 @@ setup_environment() {
     mkdir -p "$OUTPUT_DIR/logs"
     
     # Run Python setup if available
-    if [ -f "evaluation_utils.py" ]; then
-        python3 -c "from evaluation_utils import setup_evaluation_environment; setup_evaluation_environment()" 2>/dev/null || true
+    if uv run python -c "from evaluate.utils import setup_evaluation_environment; setup_evaluation_environment()" 2>/dev/null; then
+        print_success "Python environment setup completed"
+    else
+        print_info "Skipped Python environment setup (not available)"
     fi
     
     print_success "Evaluation environment ready"
@@ -139,7 +140,7 @@ run_evaluation() {
     print_info "  Output: $output_file"
     
     # Build command
-    local cmd="python3 evaluate.py \"$csv_file\" --model \"$model\" --stack-url \"$stack_url\""
+    local cmd="uv run -m evaluate \"$csv_file\" --model \"$model\" --stack-url \"$stack_url\""
     
     if [ "$output_file" != "" ]; then
         cmd="$cmd --output \"$output_file\""
