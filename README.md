@@ -1,12 +1,12 @@
 # Llama Stack Sandbox - LLM Agent Evaluation Framework
 
-A comprehensive evaluation framework for testing Large Language Model (LLM) agents running on the official Llama Stack Distribution. This repository provides tools for connecting to multiple LLMs and MCP (Model Context Protocol) servers, running structured evaluations using CSV test datasets, and generating detailed performance visualizations.
+A comprehensive evaluation framework for testing Large Language Model (LLM) agents running on the a Llama Stack Distribution. This repository provides tools for connecting to multiple LLMs and MCP (Model Context Protocol) servers, running structured evaluations using CSV test datasets, and generating detailed evaluation visualizations.
 
 ## 🎯 Purpose
 
 This sandbox environment enables:
 
-- **Local Llama Stack Distribution**: Run official Llama Stack containers locally with multiple LLM providers
+- **Local Llama Stack Distribution**: Run a Llama Stack containers locally with multiple LLM providers
 - **MCP Server Integration**: Connect to Model Context Protocol servers for enhanced tool capabilities  
 - **Structured Testing**: Define and execute test cases using CSV files with expected outcomes
 - **Multi-Metric Evaluation**: Assess agent performance across QA accuracy, tool selection, parameter handling, and response quality
@@ -27,24 +27,23 @@ This sandbox environment enables:
                        └─────────────────┘
                                │
                                ▼
-                    ┌─────────────────────┐
-                    │  Evaluation Engine  │
-                    │                     │
-                    │ • DeepEval Framework│
-                    │ • Custom Metrics    │
-                    │ • CSV Test Runner   │
-                    │ • Result Analyzer   │
-                    └─────────────────────┘
+                    ┌──────────────────────┐
+                    │  Evaluation Engine   │
+                    │                      │
+                    │ • DeepEval Framework │
+                    │ • Custom Metrics     │
+                    │ • CSV Test Runner    │
+                    │ • Result Analyzer    │
+                    └──────────────────────┘
                                │
                                ▼
-                    ┌─────────────────────┐
-                    │   Visualization     │
-                    │                     │
-                    │ • Interactive Plots │
-                    │ • HTML Dashboards   │
-                    │ • Performance Charts│
-                    │ • Comparison Reports│
-                    └─────────────────────┘
+                    ┌──────────────────────┐
+                    │   Visualization      │
+                    │                      │
+                    │ • Interactive Plots  │
+                    │ • HTML Dashboards    │
+                    │ • Performance Charts │
+                    └──────────────────────┘
 ```
 
 ## 📦 Installation & Setup
@@ -53,7 +52,7 @@ This sandbox environment enables:
 
 - **Python 3.10-3.11** (required for dependencies compatibility)
 - **UV** (recommended) or **pip** for dependency management
-- **Podman** or **Docker** (for running Llama Stack Distribution)
+- **Podman** (for running Llama Stack Distribution)
 - **curl** and **jq** (for API testing)
 
 ### 1. Clone and Install Dependencies
@@ -73,6 +72,8 @@ pip install -r requirements.txt
 
 Create a `.env` file with your model and MCP server configurations:
 
+> CAUTION: This example `.env` considers MCP servers run locally `$(hostname)` change it if necessary.
+
 ```bash
 # Model configurations (add as many as needed)
 MODEL_1_URL=https://your-llama-model-endpoint.com/v1
@@ -87,15 +88,41 @@ MODEL_2_MODEL=granite-3-3-8b
 MODEL_2_MAX_TOKENS=4096
 MODEL_2_TLS_VERIFY=false
 
-# MCP Server configurations
-MCP_SERVER_1_ID=mcp::compatibility
-MCP_SERVER_1_URI=http://localhost:8002/sse
+# MCP Server configurations (more on this later)
+MCP_SERVER_1_ID=mcp::eligibility
+MCP_SERVER_1_URI=http://$(hostname):8001/sse
 
-MCP_SERVER_2_ID=mcp::eligibility  
-MCP_SERVER_2_URI=http://localhost:8001/sse
+MCP_SERVER_2_ID=mcp::compatibility
+MCP_SERVER_2_URI=http://$(hostname):8002/sse
 
-# Base directory for Llama Stack
-LSD_BASE_DIR=/opt/app-root/src
+# Required for Llama Stack
+export LLAMA_STACK_HOST=$(hostname)
+export LLAMA_STACK_PORT=8080
+export MILVUS_DB_PATH=/opt/app-root/.milvus/milvus.db
+export FMS_ORCHESTRATOR_URL=http://localhost
+export INFERENCE_MODEL=${MODEL_1_MODEL}
+```
+
+#### Running sample local MCP Servers
+
+We provide a couple of MCP Servers:
+- [Eligibility Engine](https://github.com/alpha-hack-program/eligibility-engine-mcp-rs): An example Model Context Protocol (MCP) server developed in Rust that demonstrates how to evaluate complex business rules using the ZEN Engine decision engine. The purpose of this MCP Server is evaluating if you're eligible for unpaid leave aid given certain circumstances. 
+- [Compatibility Engine](https://github.com/alpha-hack-program/compatibility-engine-mcp-rs): An example Model Context Protocol (MCP) server developed in Rust that provides five strongly-typed calculation and compatibility functions: calc_penalty, calc_tax, check_voting, distribute_waterfall, check_housing_grant
+
+Open a terminal and run the Eligibility MCP Server: 
+
+```bash
+podman run -it --rm --name eligibility \
+  -e RUST_LOG=debug -e BIND_ADDRESS=0.0.0.0:8001 \
+  quay.io/atarazana/eligibility-engine-mcp-rs:latest
+```
+
+Open a second terminal and run the Compatibility MCP Server: 
+
+```bash
+podman run -it --rm --name compatibility \
+  -e RUST_LOG=debug -e BIND_ADDRESS=0.0.0.0:8002 \
+  quay.io/atarazana/compatibility-engine-mcp-rs:latest
 ```
 
 ### 3. Start Llama Stack Distribution
