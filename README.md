@@ -1,6 +1,6 @@
 # Llama Stack Sandbox - LLM Agent Evaluation Framework
 
-A comprehensive evaluation framework for testing Large Language Model (LLM) agents running on the a Llama Stack Distribution. This repository provides tools for connecting to multiple LLMs and MCP (Model Context Protocol) servers, running structured evaluations using CSV test datasets, and generating detailed evaluation visualizations.
+A comprehensive simplistic sandbox which includes a even more simplistic evaluation framework (uses DeepEval) for testing Large Language Model (LLM) agents running on the a Llama Stack Distribution. This repository provides tools for connecting to multiple LLMs and MCP (Model Context Protocol) servers, running structured evaluations using CSV test datasets, and generating detailed evaluation visualizations.
 
 ## 🎯 Purpose
 
