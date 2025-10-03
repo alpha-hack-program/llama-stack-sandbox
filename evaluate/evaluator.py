@@ -43,11 +43,11 @@ class LlamaStackEvaluator:
         Args:
             stack_url: URL of the Llama Stack server
             model_id: Model identifier to use for the agent
-            tool_groups: List of tool groups to enable for the agent
+            tool_groups: List of tool groups to enable for the agent. If None, will auto-discover.
         """
         self.stack_url = stack_url
         self.model_id = model_id
-        self.tool_groups = tool_groups or ["mcp::compatibility"]
+        self.tool_groups = tool_groups  # Don't set default here
         
         # Initialize Llama Stack client
         self.client = LlamaStackClient(base_url=stack_url)
@@ -89,6 +89,129 @@ class LlamaStackEvaluator:
             logger.error(f"Error loading CSV file: {e}")
             return []
     
+    async def _discover_available_tools(self) -> List[str]:
+        """
+        Discover available mcp::* tool groups from the Llama Stack server.
+        
+        Returns:
+            List of available mcp::* tool group identifiers
+        """
+        try:
+            logger.info("Discovering available mcp::* tools from Llama Stack server...")
+            
+            # Query server for tools
+            discovered_tools = await self._query_server_for_tools()
+            
+            if not discovered_tools:
+                # Final fallback to default
+                discovered_tools = self._get_default_tools()
+                logger.warning("No tools discovered from server, using fallback default tools")
+            
+            logger.info(f"Using tools: {discovered_tools}")
+            return discovered_tools
+            
+        except Exception as e:
+            logger.error(f"Error discovering tools: {e}")
+            return self._get_default_tools()
+    
+    async def _query_server_for_tools(self) -> List[str]:
+        """
+        Query the server for available mcp::* tools.
+        
+        Returns:
+            List of mcp::* tool groups found on server
+        """
+        mcp_tools = []
+        
+        try:
+            # Method 1: Try to get tool groups from /v1/toolgroups endpoint
+            if hasattr(self.client, 'toolgroups'):
+                try:
+                    response = await self.client.toolgroups.list()
+                    if hasattr(response, 'data'):
+                        for tg in response.data:
+                            tool_id = getattr(tg, 'identifier', str(tg))
+                            if tool_id.startswith('mcp::'):
+                                mcp_tools.append(tool_id)
+                except Exception:
+                    pass
+            
+            # Method 2: Try manual HTTP request to /v1/toolgroups if client method doesn't work
+            if not mcp_tools:
+                try:
+                    import httpx
+                    async with httpx.AsyncClient() as client:
+                        response = await client.get(f"{self.stack_url}/v1/toolgroups")
+                        if response.status_code == 200:
+                            data = response.json()
+                            if 'data' in data:
+                                for item in data['data']:
+                                    tool_id = item.get('identifier', '')
+                                    if tool_id.startswith('mcp::'):
+                                        mcp_tools.append(tool_id)
+                except Exception as e:
+                    logger.debug(f"Manual toolgroups request failed: {e}")
+            
+            # Method 3: Legacy fallback - try to get tools and extract groups
+            if not mcp_tools and hasattr(self.client, 'tools'):
+                try:
+                    response = await self.client.tools.list()
+                    if response:
+                        tool_groups = set()
+                        for tool in response:
+                            if hasattr(tool, 'tool_group_id'):
+                                tool_id = tool.tool_group_id
+                                if tool_id.startswith('mcp::'):
+                                    tool_groups.add(tool_id)
+                        mcp_tools = list(tool_groups)
+                except Exception:
+                    pass
+                    
+        except Exception as e:
+            logger.debug(f"Server query failed: {e}")
+        
+        return mcp_tools
+    
+    def _get_default_tools(self) -> List[str]:
+        """
+        Get default mcp::* tool groups as final fallback.
+        
+        Returns:
+            List of default mcp::* tool groups
+        """
+        return ["mcp::compatibility-engine"]
+    
+    def _get_recommended_tools(self, available_tools: List[str]) -> List[str]:
+        """
+        Get recommended tools from available mcp::* tools based on priority.
+        
+        Args:
+            available_tools: List of available mcp::* tool groups
+            
+        Returns:
+            List of recommended mcp::* tool groups
+        """
+        # Priority order for mcp tools (updated to match actual server tool names)
+        priority_order = [
+            "mcp::compatibility-engine",
+            "mcp::eligibility-engine",
+            "mcp::compatibility",  # Keep legacy name as fallback
+            "mcp::eligibility",    # Keep legacy name as fallback
+            "mcp::finance",
+            "mcp::admin"
+        ]
+        
+        recommended = []
+        for tool_group in priority_order:
+            if tool_group in available_tools:
+                recommended.append(tool_group)
+        
+        # If no priority tools available, return all available mcp tools
+        if not recommended and available_tools:
+            recommended = available_tools
+        
+        return recommended if recommended else ["mcp::compatibility-engine"]
+    
     async def setup_agent(self) -> bool:
         """
         Set up the Llama Stack agent with specified model and tools.
@@ -97,14 +220,26 @@ class LlamaStackEvaluator:
             True if setup successful, False otherwise
         """
         try:
+            # Discover tools if none were specified
+            if self.tool_groups is None:
+                available_tools = await self._discover_available_tools()
+                self.tool_groups = self._get_recommended_tools(available_tools)
+                logger.info(f"Auto-discovered and using tool groups: {self.tool_groups}")
+            else:
+                logger.info(f"Using specified tool groups: {self.tool_groups}")
+            
             self.agent_wrapper = LlamaStackAgentWrapper(
                 client=self.client,
                 model_id=self.model_id,
                 tool_groups=self.tool_groups
             )
             
-            await self.agent_wrapper.initialize()
-            logger.info(f"Agent setup completed with model: {self.model_id}")
+            # Initialize the agent and check if it was successful
+            if not await self.agent_wrapper.initialize():
+                logger.error("Agent initialization failed")
+                return False
+            
+            logger.info(f"Agent setup completed with model: {self.model_id} and tools: {self.tool_groups}")
             return True
             
         except Exception as e:

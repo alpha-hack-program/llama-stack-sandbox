@@ -173,8 +173,12 @@ The framework includes pre-built test cases for:
 # Run evaluation with default settings
 ./evaluate.sh
 
-# Run with specific parameters
+# Run with specific parameters 1
 ./evaluate.sh run -c scratch/compatibility-full.csv -m llama-3-1-8b-w4a16 -v
+
+# Run with specific parameters 2
+./evaluate.sh --csv scratch/compatibility-full.csv --url https://lsd-route-eligibility-mcp-llamastack.apps.acme.com --model llama-3-1-8b-w4a16
+
 ```
 
 ### Using Python Modules Directly

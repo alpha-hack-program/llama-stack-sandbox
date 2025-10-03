@@ -6,10 +6,9 @@
 set -e
 
 # Default values
-CSV_FILE="scratch/compatibility-full.csv"
-# MODEL="llama-3-2-3b"
-MODEL="llama-3-1-8b-w4a16"
-TOOLS="mcp::compatibility"
+CSV_FILE=""
+MODEL=""
+TOOLS=""  # Remove default, will auto-discover if empty
 STACK_URL="http://localhost:8080"
 OUTPUT_DIR="evaluation_results"
 VERBOSE=false
@@ -150,10 +149,12 @@ run_evaluation() {
         cmd="$cmd --verbose"
     fi
     
-    # Add tools
-    for tool in $tools; do
-        cmd="$cmd --tools $tool"
-    done
+    # Add tools only if specified
+    if [ -n "$tools" ]; then
+        for tool in $tools; do
+            cmd="$cmd --tools $tool"
+        done
+    fi
     
     print_info "Running command: $cmd"
     
@@ -194,17 +195,17 @@ show_usage() {
     echo "  validate            Validate CSV file only"
     echo ""
     echo "Options:"
-    echo "  -c, --csv FILE      CSV file path (default: $CSV_FILE)"
-    echo "  -m, --model MODEL   Model ID (default: $MODEL)"
-    echo "  -t, --tools TOOLS   Space-separated tool groups (default: $TOOLS)"
+    echo "  --csv FILE          CSV file path (required)"
+    echo "  --model MODEL       Model ID (required)"
+    echo "  -t, --tools TOOLS   Space-separated mcp::* tool groups (optional, auto-discovers if not specified)"
     echo "  -u, --url URL       Llama Stack URL (default: $STACK_URL)"
     echo "  -o, --output FILE   Output file path"
     echo "  -v, --verbose       Enable verbose output"
     echo "  -h, --help          Show this help"
     echo ""
     echo "Examples:"
-    echo "  $0 run -c scratch/compatibility.csv -v"
-    echo "  $0 run -m llama-4-scout-17b -o results.json"
+    echo "  $0 run --csv scratch/compatibility.csv --model llama-3-1-8b-w4a16 -v"
+    echo "  $0 run --csv scratch/compatibility.csv --model llama-4-scout-17b -o results.json"
     echo "  $0 test"
     echo "  $0 setup"
 }
@@ -215,11 +216,11 @@ OUTPUT_FILE=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        -c|--csv)
+        --csv)
             CSV_FILE="$2"
             shift 2
             ;;
-        -m|--model)
+        --model)
             MODEL="$2"
             shift 2
             ;;
@@ -268,9 +269,27 @@ main() {
             setup_environment
             ;;
         "validate")
+            if [ "$CSV_FILE" == "" ]; then
+                print_error "CSV file is required for validation. Use --csv FILE"
+                show_usage
+                exit 1
+            fi
             validate_csv "$CSV_FILE"
             ;;
         "run")
+            # Check required parameters
+            if [ "$CSV_FILE" == "" ]; then
+                print_error "CSV file is required. Use --csv FILE"
+                show_usage
+                exit 1
+            fi
+            
+            if [ "$MODEL" == "" ]; then
+                print_error "Model is required. Use --model MODEL"
+                show_usage
+                exit 1
+            fi
+            
             # Full evaluation run
             setup_environment
             

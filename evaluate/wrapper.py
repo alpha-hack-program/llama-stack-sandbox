@@ -90,6 +90,8 @@ Remember: Complete ALL parameters in tool calls. Never send incomplete JSON."""
             True if initialization successful, False otherwise
         """
         try:
+            logger.info(f"Initializing agent with model: {self.model_id}, tools: {self.tool_groups}")
+            
             # Create agent using the Agent class (same as test.py)
             self.agent = Agent(
                 self.client,
@@ -100,11 +102,20 @@ Remember: Complete ALL parameters in tool calls. Never send incomplete JSON."""
                 tool_config={"tool_choice": "auto"}
             )
             
-            logger.info(f"Agent initialized with model: {self.model_id}")
+            # Verify agent was created successfully
+            if self.agent is None:
+                logger.error("Agent creation returned None")
+                return False
+            
+            logger.info(f"Agent initialized successfully with model: {self.model_id}")
             return True
             
         except Exception as e:
             logger.error(f"Failed to initialize agent: {e}")
+            logger.error(f"Model: {self.model_id}, Tools: {self.tool_groups}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            self.agent = None
             return False
     
     async def create_session(self, session_name: Optional[str] = None) -> str:
@@ -118,6 +129,9 @@ Remember: Complete ALL parameters in tool calls. Never send incomplete JSON."""
             Session ID
         """
         try:
+            if self.agent is None:
+                raise RuntimeError("Agent not initialized. Call initialize() first.")
+                
             session_name = session_name or f"eval_session_{len(self.session_cache)}"
             session_id = self.agent.create_session(session_name)
             
@@ -150,6 +164,9 @@ Remember: Complete ALL parameters in tool calls. Never send incomplete JSON."""
             Agent response as string
         """
         try:
+            if self.agent is None:
+                raise RuntimeError("Agent not initialized. Call initialize() first.")
+                
             # Create session if not provided
             if session_id is None:
                 session_id = await self.create_session()

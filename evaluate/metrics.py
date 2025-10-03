@@ -581,9 +581,12 @@ class ParameterAccuracyMetric(BaseMetric):
                               str(expected_value).replace('.', '').replace('-', '').isdigit()):
                             if int(float(actual_value)) == int(float(expected_value)):
                                 values_match = True
-                        # Try boolean comparisons
-                        elif isinstance(actual_value, bool) or isinstance(expected_value, bool):
-                            if bool(actual_value) == bool(expected_value):
+                        # Try boolean comparisons with proper type handling
+                        elif self._is_boolean_like(actual_value) or self._is_boolean_like(expected_value):
+                            # Convert both to canonical boolean values for comparison
+                            actual_bool = self._to_boolean(actual_value)
+                            expected_bool = self._to_boolean(expected_value)
+                            if actual_bool == expected_bool:
                                 values_match = True
                     except (ValueError, TypeError):
                         # If conversion fails, values don't match
@@ -609,6 +612,26 @@ class ParameterAccuracyMetric(BaseMetric):
         reason = "; ".join(reason_parts) if reason_parts else "All parameters correct"
         
         return score, reason
+    
+    def _is_boolean_like(self, value) -> bool:
+        """Check if a value represents a boolean."""
+        if isinstance(value, bool):
+            return True
+        if isinstance(value, str):
+            return value.lower() in ['true', 'false', 'yes', 'no', '1', '0']
+        if isinstance(value, (int, float)):
+            return value in [0, 1, 0.0, 1.0]
+        return False
+    
+    def _to_boolean(self, value) -> bool:
+        """Convert a value to boolean with proper handling of various formats."""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.lower() in ['true', 'yes', '1']
+        if isinstance(value, (int, float)):
+            return bool(value) and value != 0
+        return bool(value)
     
     def _create_metric_result(self, score: float, reason: str, success: Optional[bool] = None):
         """Create metric result object."""

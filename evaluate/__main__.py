@@ -38,9 +38,9 @@ async def main():
     )
     parser.add_argument(
         "--tools", "-t",
-        nargs="+",
-        default=["mcp::compatibility"],
-        help="Tool groups to enable (default: mcp::compatibility)"
+        nargs="*",  # Changed from "+" to "*" to allow empty list
+        default=None,  # Changed default to None instead of hardcoded list
+        help="mcp::* tool groups to enable. If not specified, will auto-discover from server."
     )
     parser.add_argument(
         "--stack-url", "-u",
@@ -59,6 +59,9 @@ async def main():
     
     args = parser.parse_args()
     
+    # Handle tools parameter: if it's an empty list, treat it as None for auto-discovery
+    tools = args.tools if args.tools else None
+    
     # Validate CSV file exists
     if not Path(args.csv_file).exists():
         logger.error(f"CSV file not found: {args.csv_file}")
@@ -68,7 +71,7 @@ async def main():
     evaluator = LlamaStackEvaluator(
         stack_url=args.stack_url,
         model_id=args.model,
-        tool_groups=args.tools
+        tool_groups=tools  # Use the processed tools parameter
     )
     
     # Run evaluation
